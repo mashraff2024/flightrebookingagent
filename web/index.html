@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Runway Ops — Live Rebooking Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0B1020; --ink2:#121A33; --horizon:#1E2A4A;
+    --runway:#FFB454; --signal:#5EE7C7; --pass:#34D399; --fail:#FB7185;
+    --text:#EAF0FF; --muted:#94A3C8; --line:rgba(255,255,255,.09);
+    --glass:rgba(255,255,255,.045); --glass2:rgba(255,255,255,.07);
+    --disp:'Space Grotesk',system-ui,sans-serif;
+    --body:'Inter',system-ui,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--ink); color:var(--text); font-family:var(--body);
+    min-height:100vh; overflow-x:hidden; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  /* ---------- ambient background ---------- */
+  #stars{position:fixed; inset:0; z-index:0; pointer-events:none}
+  .aurora{position:fixed; inset:-20% -10%; z-index:0; pointer-events:none; filter:blur(70px); opacity:.55}
+  .aurora span{position:absolute; border-radius:50%; mix-blend-mode:screen; animation:drift 26s ease-in-out infinite}
+  .a1{width:46vw;height:46vw;left:-6vw;top:-8vw;background:radial-gradient(circle at 30% 30%,#2B3F7A,transparent 60%)}
+  .a2{width:52vw;height:52vw;right:-10vw;top:6vw;background:radial-gradient(circle at 50% 50%,#13564B,transparent 62%);animation-delay:-8s}
+  .a3{width:40vw;height:40vw;left:18vw;bottom:-14vw;background:radial-gradient(circle at 50% 50%,#4A2F5E,transparent 60%);animation-delay:-15s}
+  @keyframes drift{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(4vw,3vh) scale(1.08)}66%{transform:translate(-3vw,-2vh) scale(.96)}}
+  .vignette{position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:radial-gradient(ellipse at 50% 0%,transparent 40%,rgba(5,8,18,.55) 100%)}
+
+  .wrap{position:relative; z-index:2; max-width:1080px; margin:0 auto; padding:26px 22px 80px}
+
+  /* ---------- top bar ---------- */
+  .topbar{display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:34px}
+  .brand{display:flex; align-items:center; gap:12px}
+  .beacon{width:11px;height:11px;border-radius:50%;background:var(--signal);
+    box-shadow:0 0 0 0 rgba(94,231,199,.6); animation:pulse 2.6s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(94,231,199,.55)}70%{box-shadow:0 0 0 12px rgba(94,231,199,0)}100%{box-shadow:0 0 0 0 rgba(94,231,199,0)}}
+  .eyebrow{font-family:var(--mono); font-size:11.5px; letter-spacing:.28em; color:var(--muted); text-transform:uppercase}
+  .clock{font-family:var(--mono); font-size:13px; color:var(--runway); letter-spacing:.12em;
+    background:rgba(255,180,84,.08); border:1px solid rgba(255,180,84,.22); padding:6px 12px; border-radius:8px}
+
+  /* ---------- hero ---------- */
+  h1{font-family:var(--disp); font-weight:600; font-size:clamp(30px,5vw,52px); line-height:1.04;
+     margin:0 0 12px; letter-spacing:-.015em}
+  h1 .em{color:var(--runway)}
+  .lede{color:var(--muted); font-size:16.5px; max-width:60ch; margin:0 0 26px}
+
+  /* ---------- engine toggle ---------- */
+  .toggle{display:inline-flex; background:var(--glass); border:1px solid var(--line); border-radius:11px; padding:3px}
+  .toggle button{font-family:var(--mono); font-size:12px; letter-spacing:.06em; color:var(--muted);
+    background:transparent; border:0; padding:8px 14px; border-radius:8px; cursor:pointer; transition:.25s}
+  .toggle button.on{background:var(--glass2); color:var(--text); box-shadow:0 1px 0 rgba(255,255,255,.06) inset}
+
+  /* ---------- scenario chips ---------- */
+  .chips{display:flex; flex-wrap:wrap; gap:10px; margin:6px 0 26px}
+  .chip{cursor:pointer; border:1px solid var(--line); background:var(--glass); color:var(--text);
+    border-radius:13px; padding:11px 15px; transition:transform .2s, border-color .2s, background .2s; min-width:120px}
+  .chip:hover{transform:translateY(-2px); border-color:rgba(255,255,255,.22)}
+  .chip.on{border-color:rgba(255,180,84,.6); background:linear-gradient(180deg,rgba(255,180,84,.14),rgba(255,180,84,.04))}
+  .chip .ct{font-family:var(--disp); font-weight:600; font-size:14.5px}
+  .chip .cs{font-size:11.5px; color:var(--muted); margin-top:2px}
+
+  /* ---------- case strip (departure board) ---------- */
+  .board{display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--line);
+    border:1px solid var(--line); border-radius:14px; overflow:hidden; margin-bottom:26px}
+  .board .col{background:linear-gradient(180deg,#0E1530,#0B1126); padding:14px 16px}
+  .board .k{font-family:var(--mono); font-size:10.5px; letter-spacing:.2em; text-transform:uppercase; color:var(--muted)}
+  .board .v{font-family:var(--disp); font-weight:600; font-size:16px; margin-top:5px}
+  .board .v.mono{font-family:var(--mono); font-weight:500; letter-spacing:.05em}
+
+  /* ---------- pipeline ---------- */
+  .pipe{display:flex; align-items:center; gap:0; margin:8px 0 30px; flex-wrap:wrap}
+  .node{display:flex; align-items:center; gap:9px; opacity:.32; transform:translateY(3px);
+    transition:opacity .5s, transform .5s}
+  .node.show{opacity:1; transform:none}
+  .dot{width:34px;height:34px;border-radius:50%; display:grid; place-items:center;
+    border:1.5px solid var(--line); background:var(--ink2); font-family:var(--mono); font-size:13px; color:var(--muted)}
+  .node.done .dot{border-color:var(--signal); color:#031; background:var(--signal); box-shadow:0 0 18px rgba(94,231,199,.45)}
+  .node.escalate .dot{border-color:var(--fail); color:#2a0; background:var(--fail); color:#3a0010; box-shadow:0 0 18px rgba(251,113,133,.4)}
+  .node.await .dot{border-color:var(--runway); background:var(--runway); color:#3a2500; box-shadow:0 0 18px rgba(255,180,84,.45)}
+  .node .nl{font-family:var(--disp); font-weight:600; font-size:13.5px}
+  .track{height:2px; width:34px; background:linear-gradient(90deg,var(--line),var(--line)); margin:0 4px; border-radius:2px; position:relative; overflow:hidden}
+  .track.lit::after{content:""; position:absolute; inset:0; background:linear-gradient(90deg,var(--signal),var(--runway)); animation:flow .6s ease forwards}
+  @keyframes flow{from{transform:translateX(-100%)}to{transform:translateX(0)}}
+
+  /* ---------- cards ---------- */
+  .card{background:var(--glass); border:1px solid var(--line); border-radius:18px; padding:22px;
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); margin-bottom:20px;
+    box-shadow:0 24px 60px -30px rgba(0,0,0,.7)}
+  .card h2{font-family:var(--disp); font-weight:600; font-size:15px; letter-spacing:.02em; margin:0 0 4px}
+  .card .sub{color:var(--muted); font-size:13px; margin:0 0 16px}
+
+  /* ---------- decision table ---------- */
+  table{width:100%; border-collapse:collapse; font-size:14px}
+  th{font-family:var(--mono); font-weight:500; font-size:10.5px; letter-spacing:.16em; text-transform:uppercase;
+     color:var(--muted); text-align:center; padding:9px 8px; border-bottom:1px solid var(--line)}
+  th.l{text-align:left}
+  td{padding:11px 8px; text-align:center; border-bottom:1px solid rgba(255,255,255,.05)}
+  td.l{text-align:left}
+  .fid{font-family:var(--mono); font-weight:700; letter-spacing:.05em}
+  .tot{font-family:var(--mono); color:var(--muted)}
+  .flap{display:inline-block; min-width:54px; padding:5px 0; border-radius:7px; font-family:var(--mono);
+    font-weight:700; font-size:11.5px; letter-spacing:.08em; transform-origin:top; }
+  .flap.in{animation:flap .5s cubic-bezier(.2,.7,.2,1) both}
+  @keyframes flap{0%{transform:rotateX(-90deg);opacity:0}60%{transform:rotateX(12deg);opacity:1}100%{transform:rotateX(0)}}
+  .pass{background:rgba(52,211,153,.14); color:var(--pass); border:1px solid rgba(52,211,153,.3)}
+  .fail{background:rgba(251,113,133,.14); color:var(--fail); border:1px solid rgba(251,113,133,.3)}
+  .vd{font-family:var(--mono); font-weight:700; font-size:11.5px; letter-spacing:.1em; padding:5px 10px; border-radius:7px}
+  td .cellwrap{position:relative}
+  .reasons{margin-top:14px; padding-top:14px; border-top:1px dashed var(--line)}
+  .reasons div{font-size:13px; color:var(--muted); padding:3px 0}
+  .reasons b{color:var(--text); font-weight:600}
+
+  /* ---------- outcome ---------- */
+  .pass-card{display:grid; grid-template-columns:1.5fr 1fr; gap:0; border-radius:16px; overflow:hidden;
+    border:1px solid rgba(94,231,199,.25); background:linear-gradient(135deg,#0F1B33,#0C1426)}
+  .pass-card .main{padding:22px}
+  .pass-card .stub{padding:22px; border-left:2px dashed rgba(255,255,255,.18);
+    background:linear-gradient(180deg,rgba(94,231,199,.07),transparent); position:relative}
+  .pass-card .stub::before,.pass-card .stub::after{content:"";position:absolute;left:-9px;width:16px;height:16px;border-radius:50%;background:var(--ink)}
+  .pass-card .stub::before{top:-8px}.pass-card .stub::after{bottom:-8px}
+  .ptag{font-family:var(--mono); font-size:10.5px; letter-spacing:.2em; text-transform:uppercase; color:var(--signal)}
+  .proute{font-family:var(--disp); font-weight:700; font-size:30px; margin:6px 0 2px; letter-spacing:.01em}
+  .pmeta{color:var(--muted); font-size:13px}
+  .pgrid{display:flex; gap:26px; margin-top:16px; flex-wrap:wrap}
+  .pgrid .k{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+  .pgrid .v{font-family:var(--disp);font-weight:600;font-size:17px;margin-top:3px}
+  .pnr{font-family:var(--mono); font-weight:700; font-size:22px; letter-spacing:.16em; color:var(--runway)}
+  .barcode{margin-top:26px;height:56px;border-radius:6px;opacity:.8;
+    background:repeating-linear-gradient(90deg,#dfe7ff 0 2px,transparent 2px 4px,#dfe7ff 4px 7px,transparent 7px 9px,#dfe7ff 9px 12px,transparent 12px 13px,#dfe7ff 13px 17px,transparent 17px 19px)}
+  .bc{font-family:var(--mono); font-size:10px; letter-spacing:.42em; color:var(--muted); text-align:center; margin-top:7px}
+  .msg{margin-top:16px; font-size:13.5px; color:#Cdd6f4; white-space:pre-wrap; font-family:var(--mono);
+    background:rgba(0,0,0,.22); border:1px solid var(--line); border-radius:10px; padding:14px; line-height:1.6}
+
+  .alert{border-radius:16px; padding:22px; border:1px solid rgba(251,113,133,.3);
+    background:linear-gradient(135deg,rgba(251,113,133,.10),rgba(251,113,133,.02))}
+  .alert.amber{border-color:rgba(255,180,84,.35); background:linear-gradient(135deg,rgba(255,180,84,.12),rgba(255,180,84,.02))}
+  .alert .h{font-family:var(--disp); font-weight:700; font-size:19px; display:flex; align-items:center; gap:10px}
+  .alert .r{color:var(--muted); margin-top:8px; font-size:14px}
+  .actions{display:flex; gap:12px; margin-top:18px; flex-wrap:wrap}
+  .btn{font-family:var(--disp); font-weight:600; font-size:14px; border:0; border-radius:11px; padding:12px 22px; cursor:pointer; transition:transform .15s, filter .2s}
+  .btn:hover{transform:translateY(-2px)}
+  .btn.approve{background:linear-gradient(180deg,#6BF0CF,#34D399); color:#04241b}
+  .btn.reject{background:transparent; color:var(--fail); border:1px solid rgba(251,113,133,.45)}
+
+  /* ---------- stats ---------- */
+  .stats{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:4px 0 20px}
+  .stat{background:var(--glass); border:1px solid var(--line); border-radius:14px; padding:16px 18px}
+  .stat .k{font-family:var(--mono); font-size:10px; letter-spacing:.18em; text-transform:uppercase; color:var(--muted)}
+  .stat .v{font-family:var(--disp); font-weight:700; font-size:26px; margin-top:4px}
+
+  /* ---------- trace ---------- */
+  details.trace{background:rgba(0,0,0,.28); border:1px solid var(--line); border-radius:14px; overflow:hidden}
+  details.trace summary{cursor:pointer; list-style:none; padding:14px 18px; font-family:var(--mono); font-size:12.5px;
+    letter-spacing:.06em; color:var(--muted); display:flex; align-items:center; gap:10px}
+  details.trace summary::-webkit-details-marker{display:none}
+  details.trace summary::before{content:"▸"; color:var(--signal); transition:.2s}
+  details.trace[open] summary::before{transform:rotate(90deg)}
+  details.trace pre{margin:0; padding:0 18px 18px; font-family:var(--mono); font-size:11.5px; line-height:1.55;
+    color:#AfBce0; max-height:340px; overflow:auto; white-space:pre-wrap}
+
+  .foot{margin-top:26px; text-align:center; color:var(--muted); font-size:12px; font-family:var(--mono); letter-spacing:.05em}
+  .foot b{color:var(--signal); font-weight:500}
+
+  @media(max-width:720px){
+    .board{grid-template-columns:repeat(2,1fr)}
+    .pass-card{grid-template-columns:1fr}
+    .pass-card .stub{border-left:0; border-top:2px dashed rgba(255,255,255,.18)}
+    .stats{grid-template-columns:1fr 1fr}
+  }
+  @media(prefers-reduced-motion:reduce){
+    .aurora span{animation:none}.flap.in{animation:none}.track.lit::after{animation:none;transform:none}
+    .beacon{animation:none}
+  }
+</style>
+</head>
+<body>
+  <canvas id="stars"></canvas>
+  <div class="aurora"><span class="a1"></span><span class="a2"></span><span class="a3"></span></div>
+  <div class="vignette"></div>
+
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">
+        <span class="beacon"></span>
+        <span class="eyebrow">Runway Ops // Autonomous Rebooking</span>
+      </div>
+      <div class="clock" id="clock">--:--:-- UTC</div>
+    </div>
+
+    <h1>When a flight falls through,<br>the desk has <span class="em">minutes</span>, not hours.</h1>
+    <p class="lede">An agent triages one stranded passenger end to end — assess, search, check the rules, rebook or escalate. The model proposes; deterministic code decides anything touching money, eligibility, or a booking. Pick a case and watch it work.</p>
+
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:14px">
+      <div class="eyebrow">Select a case</div>
+      <div class="toggle" id="engine">
+        <button data-eng="python" class="on">Plain Python</button>
+        <button data-eng="langgraph">LangGraph</button>
+      </div>
+    </div>
+
+    <div class="chips" id="chips"></div>
+
+    <div class="board" id="board"></div>
+
+    <div class="pipe" id="pipe"></div>
+
+    <div class="card" id="tableCard">
+      <h2>What the rules checked</h2>
+      <p class="sub">Four deterministic checks per option. The agent's ranking is only a suggestion — these gates have the final say.</p>
+      <div id="tableWrap"></div>
+    </div>
+
+    <div id="outcome"></div>
+
+    <div class="stats" id="stats"></div>
+
+    <details class="trace">
+      <summary>Show technical detail — full step-by-step trace</summary>
+      <pre id="trace"></pre>
+    </details>
+
+    <div class="foot">Live agent · deterministic backend · <b>no API key, no live calls</b></div>
+  </div>
+
+<script>
+const ORDER = ["happy","overbudget","visa","apifail","hitl"];
+const INFO = {"happy":{"title":"Happy path","blurb":"Platinum flyer, carrier at fault. Should rebook into the owed Business cabin and add a hotel."},"overbudget":{"title":"Over budget","blurb":"Basic-economy flyer; the only option costs more than the cap. Should escalate, not over-book."},"visa":{"title":"Visa / connection","blurb":"Both options break a rule (a visa-restricted transit, and a too-short connection). Should reject both."},"apifail":{"title":"Search fails","blurb":"The flight search times out, retries, and comes back empty. Should escalate without inventing a flight."},"hitl":{"title":"Needs sign-off","blurb":"A high-value booking that pauses for a human to approve before anything is booked."}};
+let cur = "happy", eng = "python";
+let CURRENT=null, SESSION=null;
+const reduce = matchMedia("(prefers-reduced-motion:reduce)").matches;
+
+/* ---- starfield ---- */
+const cv = document.getElementById("stars"), cx = cv.getContext("2d");
+let stars=[], W,H, mx=0, my=0;
+function resize(){W=cv.width=innerWidth; H=cv.height=innerHeight;
+  stars=Array.from({length:Math.min(150,Math.floor(W*H/12000))},()=>({
+    x:Math.random()*W,y:Math.random()*H,z:Math.random()*.8+.2,r:Math.random()*1.3+.2}));}
+resize(); addEventListener("resize",resize);
+addEventListener("mousemove",e=>{mx=(e.clientX/W-.5); my=(e.clientY/H-.5);});
+function tick(){cx.clearRect(0,0,W,H);
+  for(const s of stars){const px=s.x+mx*30*s.z, py=s.y+my*30*s.z;
+    cx.globalAlpha=.4+s.z*.5; cx.fillStyle = s.z>.7?"#9FE8DA":"#C9D4FF";
+    cx.beginPath(); cx.arc(px,py,s.r,0,7); cx.fill();}
+  if(!reduce) requestAnimationFrame(tick);}
+tick();
+
+/* ---- clock ---- */
+function clock(){const d=new Date();
+  const t=d.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false});
+  const tz=Intl.DateTimeFormat().resolvedOptions().timeZone||"local";
+  document.getElementById("clock").textContent=t+" "+tz;}
+clock(); setInterval(clock,1000);
+
+/* ---- chips + engine ---- */
+const chipsEl=document.getElementById("chips");
+ORDER.forEach(k=>{const c=INFO[k]; const el=document.createElement("div");
+  el.className="chip"+(k===cur?" on":""); el.dataset.k=k;
+  el.innerHTML=`<div class="ct">${c.title}</div><div class="cs">${c.blurb.split(".")[0]}.</div>`;
+  el.onclick=()=>{cur=k; markChips(); runCase();}; chipsEl.appendChild(el);});
+function markChips(){[...chipsEl.children].forEach(c=>c.classList.toggle("on",c.dataset.k===cur));}
+document.querySelectorAll("#engine button").forEach(b=>b.onclick=()=>{
+  eng=b.dataset.eng; document.querySelectorAll("#engine button").forEach(x=>x.classList.toggle("on",x===b));
+  runCase();});
+
+/* ---- helpers ---- */
+const sleep=ms=>new Promise(r=>setTimeout(r,reduce?0:ms));
+
+/* ---- board ---- */
+function renderBoard(s){const b=document.getElementById("board");
+  const p=s.passenger, d=s.disruption;
+  b.innerHTML=`
+    <div class="col"><div class="k">Passenger</div><div class="v">${p.name}</div></div>
+    <div class="col"><div class="k">Status tier</div><div class="v">${p.tier}</div></div>
+    <div class="col"><div class="k">Disruption</div><div class="v">${d.reason.replace("_"," ")} · ${d.jurisdiction}</div></div>
+    <div class="col"><div class="k">Route</div><div class="v mono">${d.route}</div></div>`;}
+
+/* ---- pipeline ---- */
+async function renderPipe(s,animate,tok){
+  const pipe=document.getElementById("pipe"); pipe.innerHTML="";
+  const nodes=[];
+  s.stages.forEach((st,i)=>{
+    if(i>0){const t=document.createElement("div"); t.className="track"; pipe.appendChild(t); nodes.push(["track",t]);}
+    const n=document.createElement("div"); n.className="node "+st[1];
+    n.innerHTML=`<div class="dot">${i+1}</div><div class="nl">${st[0]}</div>`;
+    pipe.appendChild(n); nodes.push(["node",n]);
+  });
+  for(const [type,el] of nodes){
+    if(animate) await sleep(type==="track"?180:300);
+    if(tok!==gen) return;
+    if(type==="track") el.classList.add("lit"); else el.classList.add("show");
+  }
+}
+
+/* ---- table ---- */
+const COLS=["Cabin","Budget","Visa","Connection"];
+async function renderTable(s,animate,tok){
+  const wrap=document.getElementById("tableWrap");
+  if(!s.rows.length){wrap.innerHTML=`<p class="sub" style="margin:0">No options were returned — the search failed or came back empty, so there was nothing to check.</p>`;return;}
+  let html=`<table><tr><th class="l">Flight</th><th class="l">Cabin</th><th>Total</th>`;
+  COLS.forEach(c=>html+=`<th>${c}</th>`); html+=`<th>Verdict</th></tr>`;
+  s.rows.forEach((r,ri)=>{
+    html+=`<tr><td class="l fid">${r.flight}</td><td class="l">${r.cabin}</td><td class="tot">$${Math.round(r.total)}</td>`;
+    COLS.forEach((c,ci)=>{const ch=r.checks[c]; const ok=ch.ok;
+      html+=`<td><span class="flap ${ok?'pass':'fail'}" data-d="${ri*4+ci}" title="${ch.reason.replace(/"/g,"'")}">${ok?'PASS':'FAIL'}</span></td>`;});
+    const ap=r.verdict==="approved";
+    html+=`<td><span class="vd ${ap?'pass':'fail'}">${r.verdict.toUpperCase()}</span></td></tr>`;
+  });
+  html+=`</table>`;
+  const fails=s.rows.flatMap(r=>Object.entries(r.checks).filter(([k,v])=>!v.ok).map(([k,v])=>`<div><b>${r.flight} · ${k}</b> — ${v.reason}</div>`));
+  if(fails.length) html+=`<div class="reasons">${fails.join("")}</div>`;
+  wrap.innerHTML=html;
+  if(animate){const flaps=[...wrap.querySelectorAll(".flap")].sort((a,b)=>a.dataset.d-b.dataset.d);
+    for(const f of flaps){await sleep(55); if(tok!==gen) return; f.classList.add("in");}}
+  else wrap.querySelectorAll(".flap").forEach(f=>f.classList.add("in"));
+}
+
+/* ---- outcome ---- */
+function renderOutcome(s){
+  const o=s.outcome, el=document.getElementById("outcome");
+  if(o.status==="RESOLVED"){
+    el.innerHTML=`<div class="pass-card">
+      <div class="main">
+        <div class="ptag">Boarding pass · rebooked</div>
+        <div class="proute">${s.disruption.route}</div>
+        <div class="pmeta">${o.flight} · ${o.cabin}${s.passenger?(" · "+s.passenger.name):""}</div>
+        <div class="pgrid">
+          <div><div class="k">Total</div><div class="v">$${Math.round(o.total)}</div></div>
+          ${o.hotel?`<div><div class="k">Hotel</div><div class="v">${o.hotel}</div></div>`:""}
+          ${o.voucher?`<div><div class="k">Meal voucher</div><div class="v">$${Math.round(o.voucher)}</div></div>`:""}
+        </div>
+        ${o.message?`<div class="msg">${o.message.replace(/</g,"&lt;")}</div>`:""}
+      </div>
+      <div class="stub">
+        <div class="ptag">Confirmation</div>
+        <div class="pnr">${o.booking_pnr}</div>
+        <div class="pmeta" style="margin-top:14px">Issued by the agent after the rules gate passed and (where required) a human approved.</div>
+        <div class="barcode"></div>
+        <div class="bc">${o.booking_pnr}</div>
+      </div>
+    </div>`;
+  } else if(o.status==="ESCALATED"){
+    el.innerHTML=`<div class="alert">
+      <div class="h">⛔ Escalated to a human</div>
+      <div class="r"><b style="color:var(--text)">Reason:</b> ${o.escalation_reason}</div>
+      <div class="r">No option cleared the rules, so the agent handed the case to a person instead of guessing or over-booking.</div>
+    </div>`;
+  } else if(o.status==="AWAITING_HUMAN_APPROVAL"){
+    el.innerHTML=`<div class="alert amber">
+      <div class="h">⏸ Waiting for sign-off</div>
+      <div class="r">The agent recommends <b style="color:var(--text)">${o.flight} · ${o.cabin}</b> at <b style="color:var(--text)">$${Math.round(o.total)}</b>, which is above the approval threshold. Nothing is booked yet.</div>
+      <div class="actions">
+        <button class="btn approve" onclick="decide('approved')">Approve booking</button>
+        <button class="btn reject" onclick="decide('rejected')">Reject</button>
+      </div>
+    </div>`;
+  }
+}
+window.decide=function(p){resumeCase(p==='approved');};
+
+/* ---- stats ---- */
+function renderStats(s){const o=s.outcome;
+  document.getElementById("stats").innerHTML=`
+    <div class="stat"><div class="k">Pipeline steps</div><div class="v">${o.hops}</div></div>
+    <div class="stat"><div class="k">AI calls</div><div class="v">${o.llm_calls}</div></div>
+    <div class="stat"><div class="k">Search attempts</div><div class="v">${o.search_attempts}</div></div>`;}
+
+/* ---- master render ---- */
+let gen=0;
+async function render(s,animate){
+  const tok=++gen;
+  renderBoard(s);
+  document.getElementById("trace").textContent=s.trace||"";
+  await renderPipe(s,animate,tok); if(tok!==gen) return;
+  await renderTable(s,animate,tok); if(tok!==gen) return;
+  renderOutcome(s);
+  renderStats(s);
+}
+function showRunning(){document.getElementById("outcome").innerHTML='<div class="card" style="margin:0"><p class="sub" style="margin:0">Running the agent\u2026</p></div>';}
+async function api(path,body){const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});if(!r.ok){throw new Error("HTTP "+r.status);}return await r.json();}
+async function runCase(){showRunning();
+  try{CURRENT=await api("/api/run",{scenario:cur,engine:eng});SESSION=CURRENT.session||null;}
+  catch(e){document.getElementById("outcome").innerHTML='<div class="alert"><div class="h">Server not reachable</div><div class="r">Start the server and reload. ('+e.message+')</div></div>';return;}
+  render(CURRENT,true);}
+async function resumeCase(approved){if(!SESSION)return;showRunning();
+  try{CURRENT=await api("/api/resume",{session:SESSION,approved});SESSION=CURRENT.session||null;}
+  catch(e){document.getElementById("outcome").innerHTML='<div class="alert"><div class="h">Could not resume</div><div class="r">'+e.message+'</div></div>';return;}
+  render(CURRENT,true);}
+runCase();
+</script>
+</body>
+</html>

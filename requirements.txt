@@ -1,0 +1,11 @@
+# Everything needed to run the whole project: tests, CLI, both engines, and the
+# live web server. (On Windows use `python`/`py`, not `python3`.)
+pydantic>=2.0            # typed state, tool I/O, agent outputs
+fastapi>=0.110           # the live web server (server.py)
+uvicorn[standard]>=0.27  # ASGI server that runs FastAPI
+langgraph>=1.0           # the LangGraph engine (the --engine langgraph option)
+pytest>=8.0              # test suite
+
+# Optional (not required to run or deploy the web app):
+# anthropic>=0.40        # only to run against a live Claude model (set ANTHROPIC_API_KEY)
+# streamlit>=1.30        # only for the alternative Streamlit UI (app.py)
